@@ -60,6 +60,29 @@ Dynamic section at offset 0x3f94fb8 contains 36 entries:
 
 可以通过`patchelf --set-rpath '$ORIGIN' *.so`来修改RUNPATH/RPATH，虽然命令是set-rpath，但实际上也可以修改RUNPATH。 
 
+> patchelf其他用法：
+```sh
+syntax: patchelf
+  [--set-interpreter FILENAME]
+  [--page-size SIZE]
+  [--print-interpreter]
+  [--print-soname]              Prints 'DT_SONAME' entry of .dynamic section. Raises an error if DT_SONAME doesn't exist
+  [--set-soname SONAME]         Sets 'DT_SONAME' entry to SONAME.
+  [--set-rpath RPATH]
+  [--remove-rpath]
+  [--shrink-rpath]
+  [--allowed-rpath-prefixes PREFIXES]           With '--shrink-rpath', reject rpath entries not starting with the allowed prefix
+  [--print-rpath]
+  [--force-rpath]
+  [--add-needed LIBRARY]
+  [--remove-needed LIBRARY]
+  [--replace-needed LIBRARY NEW_LIBRARY]
+  [--print-needed]
+  [--no-default-lib]
+  [--debug]
+  [--version]
+  FILENAME
+```
 
 ## patchelf的原理：RPATH/RUNPATH指向.dynstr中新的字符串
 
