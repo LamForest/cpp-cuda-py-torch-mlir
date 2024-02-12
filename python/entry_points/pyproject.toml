@@ -1,0 +1,17 @@
+[project]
+name = "pyproject_example"
+version = "0.0.1"
+description = "example project"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    { name = "LamForest", email = "gtlstar@foxmail.com" },
+]
+license = { text = "BSD-3-Clause" }
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project.entry-points."example"] #group = 'example'
+hello = "pyproject_example.hello:say_hello"
