@@ -7,7 +7,7 @@ bool targetLib(const char* name) {
 }
 ```
 
-而符号名则可以精致匹配
+而符号名则可以精确匹配，所以用 `==`
 ```cpp
 bool targetSym(const char* name) {
     return adt::StringRef(name) == "__printf_chk"
