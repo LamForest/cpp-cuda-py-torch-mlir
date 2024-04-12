@@ -1,0 +1,16 @@
+--tensor-model-parallel-size 8 \
+                     --pipeline-model-parallel-size 4 \
+                     --num-layers 80 \
+                     --hidden-size 8192 \
+                     --ffn-hidden-size 28672 \
+                     --num-attention-heads 64 \
+                     --micro-batch-size 1 \
+                     --global-batch-size 1024 \
+                     --seq-length 4096 \
+                     --max-position-embeddings 4096 \
+                     --lr 1.0e-4 \
+                     --min-lr 1.0e-5 \
+                     --clip-grad 1.0 \
+                     --use-distributed-optimizer \
+                     --untie-embeddings-and-output-weights \
+                     --fp32
