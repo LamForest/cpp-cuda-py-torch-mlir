@@ -8,6 +8,8 @@ RESET = "\033[0m"
 def process_line(line):
     """处理单行，如果符合格式则返回参数名和值，否则返回None。"""
     line = line.strip()
+    if line.startswith("#"):
+        return None
     if line.endswith('"'):
         line = line[:-1].strip()
         
