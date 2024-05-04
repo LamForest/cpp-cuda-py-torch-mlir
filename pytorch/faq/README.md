@@ -40,3 +40,10 @@ add nvcc to PATH; add lib to LD_LIBRARY_PATH:
 export PATH=/usr/local/cuda-11.7/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-11.7/lib64:$LD_LIBRARY_PATH
 ```
+
+## 2. torch, torchvision 版本对应关系
+大版本的对应关系见：https://github.com/pytorch/vision?tab=readme-ov-file#installation
+
+比如安装了torch 2.1，那么torchvision 应该安装对应的0.16；否则torchvision会自动升级/降级torch。
+
+小版本没有列在表中，只能尝试，比如torch 2.0.1对应torchvision 0.15.2；0.15.1 0.15.0 都对应torch 2.0.0，不能使用
