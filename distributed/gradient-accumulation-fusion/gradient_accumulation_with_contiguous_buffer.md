@@ -45,7 +45,8 @@ torch: 使用torch的DDP类
 | 1.214663E+01 | 1.214662E+01  | 1.214662E+01  |  1.214658E+01 |
 | 1.182831E+01 | 1.182830E+01  | 1.182837E+01  |  1.182834E+01 |
 
-但是为什么不用呢param.register_hook？可能因为AccumulateGrad hook是拿到最终param.grad结果之后，而param.register_hook拿到的还不是，可能用户又加了些grad hook。这是我的猜想。
+但是为什么不用呢param.register_hook？可能因为AccumulateGrad hook是拿到最终param.grad结果之后，而param.register_hook拿到的还不是，可能用户又加了些grad hook。这是我的猜想。pytorch fsdp论文中给出了解释，但不是很理解
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20240929233007.png)
 
 如何替代？diff如下：
 ```
