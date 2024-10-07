@@ -16,6 +16,7 @@ python中的内存管理分2种, 一种是gc, 另一种是引用计数
 ## 例子
 
 ```py
+#gc_test.py
 """
 Reference: https://devguide.python.org/internals/garbage-collector/index.html
 输出如下：
