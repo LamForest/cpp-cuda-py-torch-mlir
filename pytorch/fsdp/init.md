@@ -854,3 +854,9 @@ Synchronous operation - the default mode, when async_op is set to False. When th
 
 ## record_params干啥用的？
 ![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241010162927.png)
+
+## 前向对于fc5做了 unshard fwd reshard，反向的话fc5怎么做？
+
+也是unshard fwd reshard，此时无所谓fc5 fwd是否完成或者还没开始，分配一个新的storage进行AG，然后用这个全新的参数做AG。
+
+而此时前向的fc5，用前向的AG的参数做前向，反正recordstream了，不会被释放掉。
