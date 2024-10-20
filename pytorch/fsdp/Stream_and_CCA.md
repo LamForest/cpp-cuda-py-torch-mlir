@@ -4,11 +4,17 @@ https://dev-discuss.pytorch.org/t/fsdp-cudacachingallocator-an-outsider-newb-per
 
 
 ## CCA每个block与某个stream绑定
-如果某个stream A的block用完了，而其他stream B还有富余，B上富余的block是不能转让的，因为不知道B是否还有未完成的操作使用了已释放的block。
 
-这时候，CCA会wait所有stream完成，然后emptycache。这也算是一种soft OOM
+> 最好验证下这个流程
 
-One effect of the CUDACachingAllocator tagging blocks by stream is that the blocks will keep that tag during its entire lifetime. When a request for memory comes in from a certain stream, the CUDACachingAllocator will first give out blocks with the same stream tag if available. If not available…well…this is another reason the CUDACachingAllocator would need to cudaFree() and reallocate memory (which, if you recall, is slow). Even if you have enough memory on the machine, if it’s tied to a different stream, our CUDACachingAllocator will cudaFree() its reserved memory to reallocate for your particular stream. Again, this problem is only relevant when multiple streams are used. In the default PyTorch case, you should not run into this as everything uses a single stream.
+1. 创建tensor，申请空间，优先分配到该stream的block
+2. 如果该stream上没有block了，其他则cudaMalloc，并将新得到的block标记为该stream专属
+   如果某个stream A的block用完了，而其他stream B还有富余，B上富余的block是不能转让的，因为不知道B是否还有未完成的操作使用了已释放的block。此时，会cudaMalloc为stream A申请新的block，并将新得到的block标记为该stream专属
+   如果cudaMalloc也申请不出来了，这时候，CCA会wait所有stream完成，然后emptycache。
+
+For internal correctness and simplicity of implementation, our CUDACachingAllocator, when allocating Tensors, will **tag that block of memory with the stream that made the request**. With this metadata, one can verify when executing kernels that only Tensors on the same stream can be used together.
+
+One effect of the CUDACachingAllocator tagging blocks by stream is that the blocks will **keep that tag during its entire lifetime**. When a request for memory comes in from a certain stream, the CUDACachingAllocator will first give out blocks with the same stream tag if available. If not available…well…this is another reason the CUDACachingAllocator would need to cudaFree() and reallocate memory (which, if you recall, is slow). Even if you have enough memory on the machine, if it’s tied to a different stream, our CUDACachingAllocator will cudaFree() its reserved memory to reallocate for your particular stream. Again, this problem is only relevant when multiple streams are used. In the default PyTorch case, you should not run into this as everything uses a single stream.
 
 ## record_stream() is the only reason why a requested free is not immediately blockFreed. 
 (Does this remind you of a profile we had mentioned earlier?) It is important to note that, with our CUDACachingAllocator, del doesn’t literally blockFree anything. **It is only during a later malloc where our CUDACachingAllocator has to evaluate whether a block of memory can be reused.** Consider the following allocations of C and E.

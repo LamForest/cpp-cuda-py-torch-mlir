@@ -65,6 +65,22 @@ python_torch_functions_2.cpp:0:torch::autograd::THPVariable_cat(_object*, _objec
         parameter, or the unsharded flat parameter.
 ```
 
+- .data: 
+```
+self.flat_param.data = padded_unsharded_flat_param[
+            : unsharded_size.numel()
+        ].view(
+            unsharded_size
+        ) 
+```
+- .grad: 由于flat_param是nn.Parameter，requires_grad=True，所以反向时会自动计算grad
+- _post_backward_hook_state: 注册了flat_param注册了post_backward_hook后，该项为flat_param._post_backward_hook_state = (acc_grad, hook_handle)，我以为只用注册一次，但是源码里为了严谨，每次pre_forward的时候都会去注册：
+```py
+        # Register post-backward hooks to reshard the parameters and reduce-scatter
+        # their gradients. They must be re-registered every forward pass in case
+        # the `grad_fn` is mutated.
+        _register_post_backward_hook(state, handle)
+```
 
 ## `FSDP.__init__`
 
@@ -72,9 +88,11 @@ _init_ignored_module_states 略
 
 _init_device_handle 通过以下优先级，确定当前rank的device：
 1. FSDP的参数`device_id`
-2. module如果在某个后端上（cpu meta）除外，则使用该后端
-这里我尝试了，会在已有的显存占用上产生整个模型显存+fsdp sharded显存，虽然会在FSDP之后马上降回到fsdp sharded的显存大小，但还是会容易爆显存，不推荐使用
+2. module如果在某个后端上（cpu meta）除外，则使用该后端，如果在cpu上，会先把fsdp module to到cuda上。
+如果没有使用wrap_policy，那么整个模型实际上是一个fsdp_module, 会在已有的显存占用上增加整个模型显存+fsdp sharded显存，虽然会在FSDP之后马上降回到fsdp sharded的显存大小，但还是会容易爆显存，不推荐使用
 ![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241003173801.png)
+如果用了wrap_policy，那么每个fsdp module会逐个to cuda并进行初始化，并不会导致过高的内存峰值
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241016170932.png)
 3. 否则使用`torch.cuda.current_device()`（最低优先级）
 该函数的结果会存在`state._device_handle = _FSDPDeviceHandle.from_device(determined_device)` 中，这里为啥不用普通的torch.device呢？
 
@@ -499,6 +517,9 @@ tensor([], device='cuda:0', requires_grad=True) #因为shard了，所以size==0
 
 在unshard()时，取回了 _full_param_padded并检查是否storage==0，然后resize到`flat_param._padded_unsharded_size`，这不是又来一遍吗？
 
+
+哈哈哈，现在我知道了是因为record_streams的作用，
+
 ## stream
 第一次forward之前会进行lazy init，这时候会初始化流。假设没有用hybrid_sharding，会用到几个流：
 1. 默认流（计算流）
@@ -860,3 +881,69 @@ Synchronous operation - the default mode, when async_op is set to False. When th
 也是unshard fwd reshard，此时无所谓fc5 fwd是否完成或者还没开始，分配一个新的storage进行AG，然后用这个全新的参数做AG。
 
 而此时前向的fc5，用前向的AG的参数做前向，反正recordstream了，不会被释放掉。
+
+## 内存分析
+
+### 1. 各个fsdp 初始化
+
+1. to cuda
+2. cat to flat_param
+3. shard: view and clone
+4. free flat_param
+5. original param free when function exit
+
+### 2. root_pre_forward初始化_full_param_padded _padded_unsharded_size
+
+在root_pre_forward的lazy_init中，会对每个fsdp module的flat_param进行init_flat_param_attributes操作。
+
+init_flat_param_attributes中有下图的操作，使用torch.empty初始化_full_param_padded，并设置`flat_param._padded_unsharded_size = flat_param._full_param_padded.size()`，然后马上free flat_param。注意到这里没有什么event, record_stream；所以真的是初始化后直接释放了。
+
+
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241016174719.png)
+
+为什么要这么做呢？因为后续flat_param._full_param_padded不再创建tensor，而是直接操作flat_param._full_param_padded.storage()，所以需要在lazy_init中把tensor这个壳子创建出来，这样后续可以直接操作storage了！！！
+
+
+因为是循环逐个调用每个fsdp_module的lazy_init，所以memory是逐个分配释放，如下图：
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241016174204.png)
+
+### 3. 每一层unshard
+
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241016184108.png)
+
+
+## _reduce_grad的细节
+1. 会用一个临时变量unshard_grad保存grad,然后grad置为None，这考虑到可能下一个grad计算时，当前RS还没完成（属于极端情况，但pytorch也考虑到了
+2. 构造RS的output tensor, 即 torch.empty_like(unshard_grad.chunk(state.world_size))
+2. pre_divide
+3. RS(sharded_grad, unsharded_grad)
+4. post_divide
+5. 梯度累加（_accumulate_sharded_grad(...)）flat_param._saved_grad_shard += sharded_grad
+
+unshard_grad shard_grad不会在退出时释放，因为nccl里还会持有tensor的引用。
+
+### reduce_scatter的input output 的生命周期
+
+首先output(sharded_grad)的生命周期不用担心，因为这是在post_backward stream上分配 + 使用的，只有分配和使用不同stream的情况下，才会有冲突
+
+再看input的生命周期，有2个tensor：
+1. flat_param.grad 这个tensor在默认流中计算梯度时分配；在post_backward stream上使用；出现了**跨流分配+使用**，所以需要record_stream
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241018205419.png)
+2. 如果是需要pad的情况，那么padded_unsharded_grad 是在 post_backward stream上分配+使用的；此时flat_param.grad在默认流上分配，但是在post_backward stream上构造padded_unsharded_grad时使用，也在上图的record_stream中考虑了这种情况
+
+
+太多细节了，麻了。
+
+## optimizer
+
+### 1. 初始化
+
+由于是在fsdp初始化完成之后，挂上优化器，所以优化器只会看到sharded_param，优化器状态自然而然时sharded的。
+
+根据
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241018214102.png)
+adam的优化器状态都是0初始化，所以不需要考虑分布式初始化的问题。
+
+### 2. step
+因为
+
