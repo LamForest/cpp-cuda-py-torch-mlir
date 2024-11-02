@@ -94,7 +94,7 @@ conda activate nccl (conda自动设置，等价于下面的方法)
 export LD_LIBRARY_PATH=/root/miniconda3/envs/nccl/lib/python3.9/site-packages/nvidia/nccl/lib:$LD_LIBRARY_PATH
 ```
 
-需要保证GPU空闲，否则测出来的带宽会受严重影响
+**需要保证GPU空闲，否则测出来的带宽会受严重影响**
 
 
 ### 理论带宽
