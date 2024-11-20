@@ -101,3 +101,8 @@ Installing collected packages: torchvision
 Successfully installed torchvision-0.16.2
 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable.It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
 ```
+
+
+#### 3. 在conda中安装pytorch相关依赖时，保证没有设置CUDA_HOME，且环境中已有的/usr/local/cuda不在PATH LD_LIBRARY_PATH中
+
+因为通过pip安装的pytorch 依赖的cudart、cusparse通过RPATH写死为conda安装的，如果LD_LIBRARY_PATH PATH中又定义了其他的cuda路径，虽然不会影响pytorch的安装，但可能影响其他pytorch相关包的安装，比如flash-attn grouped-gemm
