@@ -199,6 +199,37 @@ String dump of section '.dynstr':
 
 所以当patchelf修改RUNPATH/RPATH时，如果RUNPATH/RPATH中不存在新的字符串，那么patchelf会在dynstr段中添加新的字符串，这会使得dynstr段的大小变大，并移至最后，同时也会使得so size变大。
 
+#### elf加载到进程中后，只有strtab没有dynstr段了，.dynstr会合并到strtab段
+
+事情起因是`readelf -S libhello.so` 和 `readelf -p .dynstr libhello.so` 都能确切的看到.dynstr段（以及dynsym段）；但PT_DYNAMIC段中d_type的宏枚举只有DT_STRTAB，而没有DT_DYNSTR。
+
+```
+> readelf -S libhello.so
+  [ 4] .dynsym           DYNSYM           0000000000000318  00000318
+       00000000000000c0  0000000000000018   A       5     1     8
+  [ 5] .dynstr           STRTAB           00000000000003d8  000003d8
+       000000000000007b  0000000000000000   A       0     0     1
+  [ 6] .gnu.version      VERSYM           0000000000000454  00000454
+       0000000000000010  0000000000000002   A       4     0     2
+
+> readelf -p .dynstr libhello.so
+String dump of section '.dynstr':
+  [     1]  __gmon_start__
+  [    10]  _ITM_deregisterTMCloneTable
+  [    2c]  _ITM_registerTMCloneTable
+  [    46]  __cxa_finalize
+  [    55]  time
+  [    5a]  hello
+  [    60]  puts
+  [    65]  libc.so.6
+  [    6f]  GLIBC_2.2.5
+```
+
+在github上看到这么一段注释：
+![](https://raw.githubusercontent.com/LamForest/pics/main/obsidian/20241208184849.png)
+感觉挺合理的，对于.dynsym也是一样的道理。
+
+
 
 
 ## cmake设置rpath
