@@ -1,26 +1,11 @@
+import sys
+sys.path.append(".")
+from viz import viz_graph
+
 import torch
-from graphviz import Digraph
 import torch.nn as nn
 import torch.nn.functional as F
 
-
-x = torch.randn(2, 2, requires_grad=True)
-x2 = torch.randn(2, 2, requires_grad=True)
-
-# y, z = x.chunk(2, dim=0)
-
-y = x.matmul(x2)
-
-z = y * 2 + x
-
-# z.sum().backward()
-print(z)
-# import ipdb
-# ipdb.set_trace()
-# print(x.grad)
-
-# class GradFn:
-#     def grad_fn
 
 
 class SimpleMNISTModel(nn.Module):
@@ -37,10 +22,6 @@ class SimpleMNISTModel(nn.Module):
         x = self.fc3(x)
         return F.log_softmax(x, dim=1)
 
-# 实例化模型
-model = SimpleMNISTModel()
-x = torch.randn(2, 28 * 28).requires_grad_()
-mnist_out = model(x)
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -131,75 +112,29 @@ class ResNet(nn.Module):
 def resnet18(num_classes=1000):
     return ResNet(BasicBlock, [2, 2, 2, 2], num_classes)
 
-# 示例
-model = resnet18(num_classes=1000)
 
-image = torch.randn(1, 3, 224, 224).requires_grad_()
+if __name__ == "__main__":
+    mnist = SimpleMNISTModel()
+    x = torch.randn(2, 28 * 28).requires_grad_()
+    mnist_out = mnist(x)
+    viz_graph(mnist_out).render("mnist", format="png")
 
-out = model(image)
-
-
-
-node_id = 0
-
-
-def add_node(G: Digraph, input_grad_fn, gradfn_to_viznode:dict,):
-    if input_grad_fn in gradfn_to_viznode:
-        return
-    global node_id
-    gradfn_to_viznode[input_grad_fn] = str(node_id)
-    node_id += 1
-    print(f"adding {str(type(input_grad_fn))=}")
-    if type(input_grad_fn).__name__ == "AccumulateGrad":
-        v = input_grad_fn.variable
-        G.node(gradfn_to_viznode[input_grad_fn], label=f"AccumulateGrad:{list(v.shape)},{str(v.dtype)}", shape='rectangle', style='filled',)
-    else:
-        G.node(gradfn_to_viznode[input_grad_fn], label=f"{input_grad_fn.name()}")
+    resnet = resnet18(num_classes=1000)
+    image = torch.randn(1, 3, 224, 224).requires_grad_()
+    resnet_out = resnet(image)
+    viz_graph(resnet_out).render("resnet18", format="png")
     
-
-
-def _visual_graph(G: Digraph, grad_fn, gradfn_to_viznode: dict, visited: set):
+    #index=1
+    a = torch.randn(10, 2).requires_grad_()
+    x, y = a.chunk(2)
+    z = x + y * 2
+    viz_graph(z).render("chunk", format="png")
     
-    if grad_fn is None:
-        print(f"grad_fn is None")
-        return
+    a = torch.randn(10, 2).requires_grad_()
+    b = a + 2 #如何根据dx dy dz计算db?
+    x = b * 2
+    y = b / 2
+    z = b.pow(2)
+    out = (x + y + z).abs()
+    viz_graph(out).render("test", format="png")
     
-    if grad_fn in visited:
-        return
-    visited.add(grad_fn)
-    
-    for (input_grad_fn, index) in grad_fn.next_functions:
-        # 创建节点
-        #input_grad_fn 有3种情况：
-        # 1. AccumulateGrad
-        # 2. grad_fn比如AddBackward0
-        # 3. None
-        if input_grad_fn is None:
-            continue
-        
-        add_node(G, input_grad_fn, gradfn_to_viznode)
-        
-        #创建边
-        G.edge(head_name=gradfn_to_viznode[grad_fn], tail_name=gradfn_to_viznode[input_grad_fn])
-        
-        #如果不是AccumulateGrad，则递归处理
-        if type(input_grad_fn).__name__ == "AccumulateGrad":       
-            continue
-        _visual_graph(G, input_grad_fn, gradfn_to_viznode, visited)
-
-
-def visual_graph(t: torch.Tensor):
-    G = Digraph()
-    if t.grad_fn is not None:
-        global node_id
-        G.node("out", label=f"out:{list(t.shape)},{str(t.dtype)}", shape='rectangle', style='filled', )
-        gradfn_to_viznode = {}
-        add_node(G, t.grad_fn, gradfn_to_viznode)
-        G.edge(head_name="out", tail_name=gradfn_to_viznode[t.grad_fn])
-        _visual_graph(G, t.grad_fn, gradfn_to_viznode, set())
-    else:
-        assert t.grad_fn is not None, f"{t=} should have a grad_fn"
-
-    G.render("graph", format='png', view=False)
-
-visual_graph(out)
