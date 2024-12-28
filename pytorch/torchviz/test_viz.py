@@ -6,7 +6,77 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import torch
+import sys
 
+class XrayBackwardHook(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        ctx.mark_non_differentiable(*[arg for arg in args if not arg.requires_grad])
+        return args
+
+    @staticmethod
+    def backward(ctx, *args):
+        return args
+
+def apply_hook(args, fn):
+    tensors = []
+    tensors_idx = []
+    requires_grad = False
+    
+    for i, arg in enumerate(args):
+        if isinstance(arg, torch.Tensor):
+            tensors.append(arg)
+            tensors_idx.append(i)
+            requires_grad |= arg.requires_grad
+
+    if not (requires_grad and torch.is_grad_enabled()):
+        return args
+    
+    new_tensors = XrayBackwardHook.apply(*tensors)
+
+    
+    assert len(new_tensors) > 0
+    grad_fns = [t.grad_fn for t in new_tensors if t.grad_fn is not None and t.grad_fn.name() == "XrayBackwardHookBackward"]
+    
+    print(f"{grad_fns=}")
+    
+    grad_fns[0].register_hook(fn)
+
+    arg_list = list(args)
+    for idx, val in zip(tensors_idx, new_tensors):
+        arg_list[idx] = val
+    return tuple(arg_list)
+    
+def backward_after_hook(*args, **kwargs):
+    print(f"backward_after_hook")
+def backward_pre_hook(*args, **kwargs):
+    print(f"backward_pre_hook")
+    
+def begin_tag(*args):
+    args = apply_hook(args, fn=backward_after_hook)
+    if len(args) == 1: #简单粗暴，先这么用吧
+        return args[0]
+
+def end_tag(ret):
+    is_tuple = True
+    if not isinstance(ret, tuple):
+        ret = (ret,)
+        is_tuple = False
+    ret = apply_hook(ret, fn=backward_pre_hook)
+    if not is_tuple:
+        ret = ret[0]
+    return ret
+
+
+def xray_tag(func):
+    def wrapper(*args, **kwargs):
+        assert len(kwargs) == 0, f"暂不支持kwargs hook"
+        args = begin_tag(*args)
+        ret = func(*args, **kwargs)
+        ret = end_tag(ret)
+        return ret
+    return wrapper
 
 class SimpleMNISTModel(nn.Module):
     def __init__(self):
@@ -18,7 +88,9 @@ class SimpleMNISTModel(nn.Module):
     def forward(self, x):
         x = x.view(-1, 28 * 28)  # 展平图像
         x = F.relu(self.fc1(x))
+        x = begin_tag(x)
         x = F.relu(self.fc2(x))
+        x = end_tag(x)
         x = self.fc3(x)
         return F.log_softmax(x, dim=1)
 
@@ -117,24 +189,25 @@ if __name__ == "__main__":
     mnist = SimpleMNISTModel()
     x = torch.randn(2, 28 * 28).requires_grad_()
     mnist_out = mnist(x)
-    viz_graph(mnist_out).render("mnist", format="png")
+    mnist_out.sum().backward()
+    # viz_graph(mnist_out).render("mnist", format="png")
 
-    resnet = resnet18(num_classes=1000)
-    image = torch.randn(1, 3, 224, 224).requires_grad_()
-    resnet_out = resnet(image)
-    viz_graph(resnet_out).render("resnet18", format="png")
+    # resnet = resnet18(num_classes=1000)
+    # image = torch.randn(1, 3, 224, 224).requires_grad_()
+    # resnet_out = resnet(image)
+    # viz_graph(resnet_out).render("resnet18", format="png")
     
-    #index=1
-    a = torch.randn(10, 2).requires_grad_()
-    x, y = a.chunk(2)
-    z = x + y * 2
-    viz_graph(z).render("chunk", format="png")
+    # #index=1
+    # a = torch.randn(10, 2).requires_grad_()
+    # x, y = a.chunk(2)
+    # z = x + y * 2
+    # viz_graph(z).render("chunk", format="png")
     
-    a = torch.randn(10, 2).requires_grad_()
-    b = a + 2 #如何根据dx dy dz计算db?
-    x = b * 2
-    y = b / 2
-    z = b.pow(2)
-    out = (x + y + z).abs()
-    viz_graph(out).render("test", format="png")
+    # a = torch.randn(10, 2).requires_grad_()
+    # b = a + 2 #如何根据dx dy dz计算db?
+    # x = b * 2
+    # y = b / 2
+    # z = b.pow(2)
+    # out = (x + y + z).abs()
+    # viz_graph(out).render("test", format="png")
     
